@@ -172,17 +172,20 @@ Environment Variables**):
 
 Vercel membaca otomatis dari file `vercel.json` yang sudah ada di proyek:
 
-| Setting            | Nilai                                                    |
-| ------------------ | -------------------------------------------------------- |
-| Framework          | `vite`                                                   |
-| Install Command    | `bun install`                                            |
-| Build Command      | `npx convex deploy --cmd 'npx tsc -b && npx vite build'` |
-| Output Directory   | `dist`                                                   |
+| Setting            | Nilai                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| Framework          | `vite`                                                                             |
+| Install Command    | `bun install`                                                                      |
+| Build Command      | `npx convex deploy --cmd-url-env-var-name VITE_CONVEX_URL --cmd 'npx vite build'`   |
+| Output Directory   | `dist`                                                                             |
 
 Kalau panel Vercel menampilkan kolom kosong, biarkan saja — `vercel.json` yang
-menentukan. Pastikan **Build Command** dan **Output Directory** terisi.
+menentukan. Tapi **kalau kamu pernah mengisi Build Command manual di dashboard
+Vercel, nilai itu yang menang** dan `vercel.json` diabaikan. Isi dengan perintah
+di atas supaya sama.
 Jangan pakai Build Command bawaan Vercel untuk Vite (`vite build`), karena
-Vercel perlu codegen Convex dulu.
+Vercel perlu codegen Convex dulu (`convex deploy` yang membuat
+`src/convex/_generated`, folder itu tidak ikut ter-commit ke Git).
 
 ## 3.4 Klik "Deploy"
 
@@ -243,6 +246,8 @@ sekali — karena data disimpan di Convex, bukan di Vercel.
 | Gejala                                              | Penyebab                                          | Solusi                                                                 |
 | --------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
 | Build gagal: `convex deploy` tidak bisa             | `CONVEX_DEPLOY_KEY` belum diisi                  | Tambahkan di Vercel → Environment Variables                             |
+| `ParserError: failed to parse package.json`          | `package.json` rusak/terduplikasi                | Unggah ulang `package.json` dari repo (formatnya JSON tunggal, tanpa blok `{ ... }` di atas) |
+| `command not found: convex`                         | Install dan build memakai package manager beda  | Samakan: install `bun install`, build `npx convex deploy ...` (convex tetap terbaca dari `node_modules`) |
 | Halaman kosong / putih                              | `VITE_CONVEX_URL` salah atau belum diisi          | Cek URL-nya, harus `https://xxx.convex.cloud` tanpa garis miring di akhir |
 | Refresh `/admin` atau `/anggota` hasilnya 404        | Rewrite SPA belum aktif                            | Pastikan `vercel.json` ada dan berisi `rewrites`                         |
 | Error di halaman `/auth`                            | `JWT_PRIVATE_KEY` / `JWKS` / `SITE_URL` belum di-set di Convex | Set 3 env var itu di Convex                                          |
@@ -306,8 +311,13 @@ Tambahan ini tidak mengganggu build Vercel selama dependency
 paket itu, bersihkan dengan menghapus `vlyPlugin()` dari `vite.config.ts`
 beserta import/`<VlyToolbar />` di `src/main.tsx`.
 
-**Catatan script `build`:** di `package.json`, script `build` berisi
-`convex dev --once && tsc -b && vite build`. Langkah `convex dev --once`
-adalah konvensi sandbox (untuk development), sehingga **Vercel tidak
-memakai script `build` tersebut** — `vercel.json` memakai perintah eksplisit
-`npx convex deploy --cmd 'npx tsc -b && npx vite build'` agar aman di produksi.
+**Catatan script `build`:** di `package.json`, script `build` sengaja dibuat
+sederhana (`vite build`) supaya aman di mana pun. Untuk produksi, Vercel
+memakai perintah eksplisit dari `vercel.json`:
+`npx convex deploy --cmd-url-env-var-name VITE_CONVEX_URL --cmd 'npx vite build'`.
+Flag `--cmd-url-env-var-name VITE_CONVEX_URL` memberitahu `convex deploy`
+agar mengisi `VITE_CONVEX_URL` dengan URL deployment produksi — itu yang
+dibaca `src/main.tsx` (`new ConvexReactClient(import.meta.env.VITE_CONVEX_URL)`),
+jadi kamu tidak perlu menulis `VITE_CONVEX_URL` sendiri di Vercel.
+Typecheck (`tsc -b`) sengaja tidak dijalankan di Vercel: Vite tidak
+membutuhkannya, dan `tsconfig` proyek ini ikut membangun file khusus sandbox.
