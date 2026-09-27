@@ -91,6 +91,8 @@
 
 {
   "scripts": {
-    "build": "convex dev --once && tsc -b && vite build"
+    "dev": "vite",
+    "build": "convex dev --once && tsc -b && vite build",
+    "lint": "eslint ."
   }
 }
