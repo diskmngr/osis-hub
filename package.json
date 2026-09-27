@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "convex dev --once && tsc -b && vite build",
     "lint": "eslint .",
     "format": "prettier --write .",
     "preview": "vite preview"
@@ -86,13 +86,5 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.1",
     "vite": "^7.2.6"
-  }
-}
-
-{
-  "scripts": {
-    "dev": "vite",
-    "build": "convex dev --once && tsc -b && vite build",
-    "lint": "eslint ."
   }
 }
