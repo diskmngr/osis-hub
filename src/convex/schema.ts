@@ -62,6 +62,7 @@ const schema = defineSchema(
       orgName: v.string(),
       welcomeText: v.string(),
       logoId: v.optional(v.id("_storage")),
+      seedVersion: v.optional(v.number()),
     }).index("by_key", ["key"]),
 
     // Fixed-credential admin sessions (token stored in the browser).
