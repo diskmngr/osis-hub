@@ -88,3 +88,9 @@
     "vite": "^7.2.6"
   }
 }
+
+{
+  "scripts": {
+    "build": "convex dev --once && tsc -b && vite build"
+  }
+}
