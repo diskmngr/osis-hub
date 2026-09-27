@@ -1,134 +1,257 @@
-# Panduan Deploy — OSIS Hub (Vite + Convex + Vercel)
+# Deploy ke Vercel — Panduan Lengkap (OSIS Hub)
 
-Aplikasi ini terdiri dari dua bagian:
-
-| Bagian    | Teknologi                       | Dihosting di         |
-| --------- | ------------------------------- | -------------------- |
-| Frontend  | Vite + React 19 (SPA)           | Vercel               |
-| Backend   | Convex (DB, auth, file storage) | Convex (cloud)       |
-
-Urutan deploy: **1) backend Convex → 2) frontend Vercel**.
+Panduan ini untuk pemula. Ikuti urutan **1 → 2 → 3** secara berurutan.
 
 ---
 
-## 0. Prasyarat
+## Peta besar: apa yang dideploy ke mana
 
-- Node.js 20+ dan [Bun](https://bun.sh) (manajer paket proyek ini).
-- Akun [Convex](https://convex.dev) dan [Vercel](https://vercel.com).
-- Repo Git (GitHub/GitLab/Bitbucket) berisi folder ini.
+```
+┌──────────────────────────┐          ┌───────────────────────────┐
+│  VERCEL  (frontend)      │  HTTPS   │  CONVEX  (backend + DB)   │
+│                          │ ───────► │                           │
+│  • Halaman publik        │  query / │  • Database anggota       │
+│  • Panel admin /admin    │  mutate  │  • Database kegiatan      │
+│  • Form aspirasi         │          │  • Database aspirasi      │
+│                          │  ◄─────── │  • Penyimpanan foto       │
+│  Hanya file statis       │  data    │  • Auth (login)           │
+└──────────────────────────┘          └───────────────────────────┘
+```
+
+Dua hal penting yang harus kamu pahami:
+
+1. **Vercel hanya menyimpan file statis** (HTML, CSS, JS). Vercel tidak punya database.
+2. **Convex adalah "otak" aplikasinya**: database, login, dan penyimpanan foto semuanya ada di sana.
+
+Urutannya wajib: **Convex dulu, baru Vercel.** Karena saat Vercel build, ia perlu tahu alamat server Convex.
+
+---
+
+## Yang perlu disiapkan (checklist)
+
+- [ ] Akun [Vercel](https://vercel.com) (bisa daftar pakai GitHub)
+- [ ] Akun [Convex](https://convex.dev)
+- [ ] Kode proyek di dalam repository Git (GitHub/GitLab/Bitbucket)
+- [ ] 3 nilai rahasia (akan dijelaskan di Bagian 1)
+
+---
+
+# BAGIAN 1 — Siapkan backend Convex
+
+## 1.1 Install paket & masuk akun Convex
+
+Buka terminal di folder proyek, lalu jalankan:
 
 ```bash
 bun install
+bunx convex login
 ```
 
----
+Perintah kedua akan membuka browser untuk login ke Convex.
 
-## 1. Backend — Convex (production)
-
-### 1a. Buat deployment produksi
+## 1.2 Pastikan project Convex sudah terhubung
 
 ```bash
-# login ke Convex (sekali saja)
-bunx convex login
-
-# buat / hubungkan project, lalu tulis URL-nya
 bunx convex dev --once
 ```
 
-Catat nilai `VITE_CONVEX_URL` (mis. `https://xxxx.convex.cloud`).
+Kalau sukses, akan muncul baris seperti ini:
 
-### 1b. Production deploy key
-
-Di dashboard Convex: **Project → Settings → Deploy Keys → Generate Production Deploy Key**.
-Simpan nilainya sebagai `CONVEX_DEPLOY_KEY` (hanya untuk build Vercel, jangan di-commit).
-
-Deploy backend secara manual (opsional, biasanya Vercel yang menjalankan ini saat build):
-
-```bash
-CONVEX_DEPLOY_KEY="prod:xxxx" bunx convex deploy
+```
+└─ https://xxxx-xxxx.convex.cloud
 ```
 
-### 1c. Environment variable backend (WAJIB, untuk auth)
+**Catat URL tersebut.** Ini yang nanti dipakai sebagai `VITE_CONVEX_URL` di Vercel.
 
-Auth Convex memerlukan 3 variabel yang sama di deployment produksi. Cara termudah:
-salin dari deployment dev yang sudah berjalan, atau set lewat dashboard
-**Convex → Settings → Environment Variables**.
+> **Cara cepat (opsional):** kalau kamu mau memakai deployment Convex yang
+> sekarang sudah berjalan (`https://third-tern-377.convex.cloud`), semua data
+> anggota/kegiatan dan konfigurasi login sudah siap. Kamu bisa **melewati
+> Bagian 1.3–1.4** dan langsung memakai URL itu sebagai `VITE_CONVEX_URL`.
+> Steps 1.1–1.2 tetap perlu dilakukan.
 
-| Variable          | Keterangan                                                        |
-| ----------------- | ----------------------------------------------------------------- |
-| `JWT_PRIVATE_KEY` | Kunci privat JWT (format PKCS8) — **harus sama** dengan pasangan JWKS |
-| `JWKS`            | JSON Web Key Set publik pasangan dari `JWT_PRIVATE_KEY`           |
-| `SITE_URL`        | URL frontend produksi, mis. `https://osis-hub.vercel.app`        |
+## 1.3 Environment variable backend (untuk login/Auth)
 
-Generate pasangan kunci baru bila perlu:
+Backend Convex butuh 3 nilai berikut. Tanpa ini, halaman `/auth` akan error.
+
+| Nama             | Isi                                                          |
+| ---------------- | ------------------------------------------------------------ |
+| `JWT_PRIVATE_KEY`| Kunci privat JWT (PKCS8)                                     |
+| `JWKS`           | Kunci publik (JSON Web Key Set) dari `JWT_PRIVATE_KEY` di atas |
+| `SITE_URL`       | Alamat website kamu di Vercel, mis. `https://osis.vercel.app` |
+
+**Cara termudah: salin dari deployment yang sudah jalan.**
+
+1. Buka [dashboard.convex.dev](https://dashboard.convex.dev)
+2. Pilih project Convex kamu
+3. Klik **Settings → Environment Variables**
+4. Salin nilai `JWT_PRIVATE_KEY`, `JWKS`, dan `SITE_URL`
+
+**Cara lainnya, lewat terminal:**
 
 ```bash
-bunx @convex-dev/auth --generate-keys   # atau salin dari deployment dev
+# lihat dulu yang sudah ada
+bunx convex env list
+
+# set/update satu per satu (tambahkan --prod untuk deployment produksi)
+bunx convex env set JWT_PRIVATE_KEY "isi-dari-dashboard" --prod
+bunx convex env set JWKS "isi-dari-dashboard" --prod
+bunx convex env set SITE_URL "https://nama-anda.vercel.app" --prod
 ```
 
-> Kalau auth belum dipakai di produksi, Anda tetap harus men-set ketiganya
-> agar endpoint `/auth` tidak error.
+> `SITE_URL` boleh diisi setelah domain Vercel kamu jadi (Bagian 3.5). Kalau
+> belum tahu, isi dulu dengan URL sementara lalu perbaiki nanti.
 
-### 1d. Isi data contoh (opsional)
+## 1.4 Deploy backend ke Convex
 
-Halaman publik otomatis memanggil seeding saat pertama dibuka, jadi tidak ada
-langkah tambahan. Login admin panel: `/admin/login` dengan kredensial
-`admin` / `admin123`.
+Buat **Production Deploy Key**:
 
----
+1. Dashboard Convex → project kamu → **Settings → Deploy Keys**
+2. Klik **Generate Production Deploy Key**
+3. Salin hasilnya (formatnya diawali `prod:`). **Jangan simpan di dalam kode.**
 
-## 2. Frontend — Vercel
+Lalu jalankan:
 
-1. **Import repo** ke Vercel (Add New → Project → pilih repo).
-2. Vercel otomatis membaca `vercel.json`:
-   - Install Command: `bun install`
-   - Build Command: `npx convex deploy --cmd 'bun run build'`
-   - Output Directory: `dist`
-   - Rewrites SPA → `/index.html` (agar rute seperti `/anggota`, `/admin`
-     tidak 404 saat di-refresh).
-3. **Environment Variables** (Project → Settings → Environment Variables):
+```bash
+CONVEX_DEPLOY_KEY="prod:xxxxxxxx" bunx convex deploy
+```
 
-   | Variable            | Value                                   | Scope         |
-   | ------------------- | --------------------------------------- | ------------- |
-   | `VITE_CONVEX_URL`   | `https://xxxx.convex.cloud`              | Production    |
-   | `CONVEX_DEPLOY_KEY` | production deploy key dari langkah 1b    | Production    |
+Kalau muncul tanda centang hijau, backend sudah live.
 
-   > `VITE_CONVEX_URL` harus berupa URL **deployment produksi**. Jika memakai
-   > satu deployment Convex untuk dev dan prod, nilainya bisa sama.
-4. Klik **Deploy**.
+## 1.5 Buat deploy key untuk Vercel
 
-Setelah URL Vercel jadi, perbarui `SITE_URL` di environment Convex (langkah 1c)
-ke URL tersebut, lalu redeploy bila perlu.
+Simpan `Production Deploy Key` tadi di tempat aman — nanti perlu kamu paste ke
+Vercel. Vercel membutuhkannya untuk menjalankan `convex deploy` otomatis
+setiap kali kamu deploy.
 
 ---
 
-## 3. Setelah deploy
+# BAGIAN 2 — Unggah kode ke GitHub
 
-- Buka `https://<domain>.vercel.app` → halaman publik.
-- `https://<domain>.vercel.app/anggota`, `/kegiatan`, `/aspirasi` → halaman publik.
-- `https://<domain>.vercel.app/admin/login` → admin panel (`admin` / `admin123`).
-- `https://<domain>.vercel.app/auth` → alur login pengguna (Convex Auth).
+1. Buat repository baru di GitHub (boleh private).
+2. Unggah isi folder proyek ke sana.
 
----
+```bash
+git init
+git add .
+git commit -m "OSIS Hub"
+git branch -M main
+git remote add origin https://github.com/username/nama-repo.git
+git push -u origin main
+```
 
-## Catatan tentang runtime Freebuff/Vly
-
-Proyek ini awalnya dibuat di lingkungan Freebuff dan menyertakan beberapa
-tambahan runtime yang hanya relevan di sana:
-
-- `vite.config.ts` → `vlyPlugin()` dan pengaturan `server.hmr`.
-- `src/main.tsx` → `import "@vly-ai/integrations"` dan `<VlyToolbar />`.
-- `vly-toolbar-readonly.tsx`, `src/instrumentation.tsx`, `src/lib/vly-integrations.ts`.
-- `main.ts` (server Deno khusus sandbox), `sst-env.d.ts`, `isolate/`.
-
-Tambahan ini tidak mengganggu build Vercel selama dependency `@vly-ai/integrations`
-ada di `package.json`. Jika build/lint Vercel mengeluh soal paket itu, Anda bisa
-membersihkannya dengan menghapus `vlyPlugin()` dari `vite.config.ts` beserta
-import/`<VlyToolbar />` di `src/main.tsx`.
+> File `.env.local` (berisi rahasia) **sudah otomatis tidak ikut** karena
+> ada di `.gitignore`. Ini benar dan harus tetap begitu.
 
 ---
 
-## Struktur file penting
+# BAGIAN 3 — Deploy frontend ke Vercel
+
+## 3.1 Buat project baru di Vercel
+
+1. Buka [vercel.com/new](https://vercel.com/new)
+2. Pilih **Add New… → Project**
+3. Pilih repository GitHub kamu, klik **Import**
+
+## 3.2 Set environment variable di Vercel
+
+Sebelum klik Deploy, atur dua variabel ini.
+
+Klik **Environment Variables** (atau atur lewat **Project → Settings →
+Environment Variables**):
+
+| Nama                | Nilai                                        |
+| ------------------- | -------------------------------------------- |
+| `VITE_CONVEX_URL`   | `https://xxxx-xxxx.convex.cloud` (dari 1.2)  |
+| `CONVEX_DEPLOY_KEY` | `prod:xxxxxxxx` (dari 1.5)                    |
+
+> **Kenapa `VITE_CONVEX_URL` wajib berawalan `VITE_`?**
+> Vite hanya menyertakan variabel berawalan `VITE_` ke dalam kode browser.
+> Nama lain tidak akan terbaca oleh frontend.
+
+## 3.3 Konfigurasi build
+
+Vercel membaca otomatis dari file `vercel.json` yang sudah ada di proyek:
+
+| Setting            | Nilai                                                    |
+| ------------------ | -------------------------------------------------------- |
+| Framework          | `vite`                                                   |
+| Install Command    | `bun install`                                            |
+| Build Command      | `npx convex deploy --cmd 'npx tsc -b && npx vite build'` |
+| Output Directory   | `dist`                                                   |
+
+Kalau panel Vercel menampilkan kolom kosong, biarkan saja — `vercel.json` yang
+menentukan. Pastikan **Build Command** dan **Output Directory** terisi.
+Jangan pakai Build Command bawaan Vercel untuk Vite (`vite build`), karena
+Vercel perlu codegen Convex dulu.
+
+## 3.4 Klik "Deploy"
+
+Vercel akan menjalankan build.通常是 1–3 menit.
+
+Kalau sukses, kamu dapat URL seperti:
+`https://osis-hub.vercel.app`
+
+## 3.5 Perbarui SITE_URL (langkah penting)
+
+Karena baru jadi sekarang domain Vercel kamu, kembali ke Convex:
+
+1. Dashboard Convex → **Settings → Environment Variables**
+2. Set `SITE_URL` = `https://osis-hub.vercel.app`
+3. Kembali ke Vercel, klik menu **⋯** pada deployment → **Redeploy**
+
+---
+
+# BAGIAN 4 — Cek hasilnya
+
+Buka URL Vercel kamu dan coba semua halaman ini:
+
+| URL                                  | Isi                                        |
+| ------------------------------------ | ------------------------------------------ |
+| `/`                                   | Beranda                                    |
+| `/anggota`                            | Daftar anggota (12 orang)                  |
+| `/kegiatan`                           | Daftar kegiatan                           |
+| `/aspirasi`                           | Form aspirasi                               |
+| `/admin/login`                        | Login pengurus (`admin` / `admin123`)      |
+| `/admin/anggota`                      | Kelola anggota (ubah nama, tambah, hapus)  |
+| `/admin/kegiatan`                     | Kelola kegiatan (ubah judul & deskripsi)   |
+
+Kalau semuanya tampil dan bisa diisi, deploy kamu berhasil.
+
+---
+
+# BAGIAN 5 — Deploy ulang (tulang belakang website kamu)
+
+Setiap kali kamu mengubah kode:
+
+```bash
+git add .
+git commit -m "perubahan baru"
+git push
+```
+
+Vercel otomatis terdeteksi, build, dan deploy ulang. Tidak perlu buka Vercel
+lagi.
+
+Kalau kamu hanya ingin parse ulang isi website tanpa mengubah kode (misal
+menambah anggota lewat panel admin), kamu **tidak perlu** deploy ulang sama
+sekali — karena data disimpan di Convex, bukan di Vercel.
+
+---
+
+# Troubleshooting
+
+| Gejala                                              | Penyebab                                          | Solusi                                                                 |
+| --------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
+| Build gagal: `convex deploy` tidak bisa             | `CONVEX_DEPLOY_KEY` belum diisi                  | Tambahkan di Vercel → Environment Variables                             |
+| Halaman kosong / putih                              | `VITE_CONVEX_URL` salah atau belum diisi          | Cek URL-nya, harus `https://xxx.convex.cloud` tanpa garis miring di akhir |
+| Refresh `/admin` atau `/anggota` hasilnya 404        | Rewrite SPA belum aktif                            | Pastikan `vercel.json` ada dan berisi `rewrites`                         |
+| Error di halaman `/auth`                            | `JWT_PRIVATE_KEY` / `JWKS` / `SITE_URL` belum di-set di Convex | Set 3 env var itu di Convex                                          |
+| Perubahan kode tidak muncul                         | Build ulang Vercel belum dijalankan                 | Klik **Redeploy**                                                       |
+| Foto tidak bisa diunggah                            | Storage Convex belum aktif                          |通常是 otomatis; cek kuota di dashboard Convex                          |
+
+---
+
+# Struktur file penting
 
 ```
 .
@@ -137,6 +260,7 @@ import/`<VlyToolbar />` di `src/main.tsx`.
 ├── index.html                  # entry HTML Vite
 ├── package.json
 ├── vite.config.ts
+├── DEPLOY.md                   # panduan ini
 └── src
     ├── main.tsx                # router + provider
     ├── index.css               # tema Tailwind v4
@@ -164,3 +288,26 @@ import/`<VlyToolbar />` di `src/main.tsx`.
         ├── admin/ImagePicker.tsx
         └── RequireAuth.tsx
 ```
+
+---
+
+# Catatan tentang runtime Freebuff/Vly
+
+Proyek ini awalnya dibuat di lingkungan Freebuff dan menyertakan beberapa
+tambahan runtime yang hanya relevan di sana:
+
+- `vite.config.ts` → `vlyPlugin()`
+- `src/main.tsx` → `import "@vly-ai/integrations"` dan `<VlyToolbar />`
+- `vly-toolbar-readonly.tsx`, `src/instrumentation.tsx`, `src/lib/vly-integrations.ts`
+- `main.ts` (server Deno khusus sandbox), `sst-env.d.ts`
+
+Tambahan ini tidak mengganggu build Vercel selama dependency
+`@vly-ai/integrations` ada di `package.json`. Jika build Vercel mengeluh soal
+paket itu, bersihkan dengan menghapus `vlyPlugin()` dari `vite.config.ts`
+beserta import/`<VlyToolbar />` di `src/main.tsx`.
+
+**Catatan script `build`:** di `package.json`, script `build` berisi
+`convex dev --once && tsc -b && vite build`. Langkah `convex dev --once`
+adalah konvensi sandbox (untuk development), sehingga **Vercel tidak
+memakai script `build` tersebut** — `vercel.json` memakai perintah eksplisit
+`npx convex deploy --cmd 'npx tsc -b && npx vite build'` agar aman di produksi.
